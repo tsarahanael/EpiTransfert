@@ -36,7 +36,7 @@ public class FileController {
 
     @PostMapping(value = "/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public GroupResponse uploadFiles(@RequestParam("files") List<MultipartFile> files) {
-        return new GroupResponse(fileService.createGroup(files));
+        return new GroupResponse("http://localhost:8080/files/" + fileService.createGroup(files));
     }
 
     @GetMapping("/files/{groupId}")
