@@ -2,9 +2,13 @@ package org.example.epitransfert.service;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
+import java.util.List;
 
+import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.example.epitransfert.service.dto.FileEntity;
+import org.example.epitransfert.service.dto.GroupEntity;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.gridfs.GridFsResource;
@@ -25,38 +29,50 @@ public class FileService {
         this.gridFsTemplate = gridFsTemplate;
     }
 
-    public String createFile(MultipartFile file) {
+    public String createGroup(List<MultipartFile> files) {
+        String groupId = new ObjectId().toHexString();
         try {
-            ObjectId id = gridFsTemplate.store(file.getInputStream(), file.getOriginalFilename(), file.getContentType());
-            return id.toHexString();
+            for (MultipartFile file : files) {
+                Document metadata = new Document("groupId", groupId);
+                gridFsTemplate.store(file.getInputStream(), file.getOriginalFilename(), file.getContentType(), metadata);
+            }
+            return groupId;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
     }
 
-    public FileEntity getFile(String id) {
-        GridFSFile gridFsFile = findById(id);
-        GridFsResource resource = gridFsTemplate.getResource(gridFsFile);
-        try {
-            return new FileEntity(gridFsFile.getFilename(), resource.getContentType(), gridFsFile.getLength(), resource.getInputStream());
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+    public GroupEntity getGroup(String groupId) {
+        List<FileEntity> files = new ArrayList<>();
+        for (GridFSFile gridFsFile : findByGroupId(groupId)) {
+            GridFsResource resource = gridFsTemplate.getResource(gridFsFile);
+            try {
+                files.add(new FileEntity(gridFsFile.getFilename(), resource.getContentType(), gridFsFile.getLength(), resource.getInputStream()));
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
         }
+        return new GroupEntity(groupId, files);
     }
 
-    public void deleteFile(String id) {
-        findById(id);
-        gridFsTemplate.delete(Query.query(Criteria.where("_id").is(new ObjectId(id))));
+    public void deleteGroup(String groupId) {
+        findByGroupId(groupId);
+        gridFsTemplate.delete(groupIdQuery(groupId));
     }
 
-    private GridFSFile findById(String id) {
-        if (!ObjectId.isValid(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "File not found: " + id);
+    private List<GridFSFile> findByGroupId(String groupId) {
+        if (!ObjectId.isValid(groupId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found: " + groupId);
         }
-        GridFSFile gridFsFile = gridFsTemplate.findOne(Query.query(Criteria.where("_id").is(new ObjectId(id))));
-        if (gridFsFile == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "File not found: " + id);
+        List<GridFSFile> gridFsFiles = new ArrayList<>();
+        gridFsTemplate.find(groupIdQuery(groupId)).into(gridFsFiles);
+        if (gridFsFiles.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found: " + groupId);
         }
-        return gridFsFile;
+        return gridFsFiles;
+    }
+
+    private Query groupIdQuery(String groupId) {
+        return Query.query(Criteria.where("metadata.groupId").is(groupId));
     }
 }
